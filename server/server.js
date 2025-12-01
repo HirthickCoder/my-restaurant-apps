@@ -1,36 +1,66 @@
-// server.js
-import express from 'express';
-import Stripe from 'stripe';
-import cors from 'cors';
+const express = require('express');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const cors = require('cors');
+require('dotenv').config();
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const app = express();
+const port = process.env.PORT || 3001;
 
-// Enable CORS with specific origin
-app.use(cors({
-  origin: 'http://localhost:5173',
+// Configure CORS
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3002',
+  process.env.FRONTEND_URL, // Azure frontend URL
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.some(allowed => origin?.includes(allowed))) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
-}));
+};
 
+// Middleware
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Enable pre-flight for all routes
 app.use(express.json());
 
-// Test route
-app.get('/api/test', (req, res) => {
-  res.json({ message: 'API is working!' });
+// Home route - for testing
+app.get('/', (req, res) => {
+  res.json({
+    message: '🍽️ Restaurant API is running!',
+    status: 'success',
+    endpoints: {
+      payment: '/api/create-payment-intent (POST)'
+    },
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Stripe payment intent
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy', uptime: process.uptime() });
+});
+
+// Create Payment Intent
 app.post('/api/create-payment-intent', async (req, res) => {
   try {
-    const { amount } = req.body;
+    const { amount, currency = 'inr' } = req.body;
     
-    if (!amount) {
-      return res.status(400).json({ error: 'Amount is required' });
-    }
-
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: parseInt(amount),
-      currency: 'usd',
+      amount: Math.round(amount),
+      currency: currency,
       automatic_payment_methods: {
         enabled: true,
       },
@@ -41,19 +71,11 @@ app.post('/api/create-payment-intent', async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating payment intent:', error);
-    res.status(500).json({ 
-      error: error.message || 'Internal server error' 
-    });
+    res.status(500).json({ error: error.message });
   }
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
-});
-
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+// Start server
+app.listen(port, () => {
+  console.log(`Server running on http://localhost:${port}`);
 });
