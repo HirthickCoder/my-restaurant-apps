@@ -1,32 +1,36 @@
-const express = require('express');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const cors = require('cors');
-require('dotenv').config();
+// server.js
+import express from 'express';
+import Stripe from 'stripe';
+import cors from 'cors';
 
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const app = express();
-const port = process.env.PORT || 3001;
 
-// Configure CORS
-const corsOptions = {
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+// Enable CORS with specific origin
+app.use(cors({
+  origin: 'http://localhost:5173',
   credentials: true
-};
+}));
 
-// Middleware
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // Enable pre-flight for all routes
 app.use(express.json());
 
-// Create Payment Intent
+// Test route
+app.get('/api/test', (req, res) => {
+  res.json({ message: 'API is working!' });
+});
+
+// Stripe payment intent
 app.post('/api/create-payment-intent', async (req, res) => {
   try {
-    const { amount, currency = 'inr' } = req.body;
+    const { amount } = req.body;
     
+    if (!amount) {
+      return res.status(400).json({ error: 'Amount is required' });
+    }
+
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amount),
-      currency: currency,
+      amount: parseInt(amount),
+      currency: 'usd',
       automatic_payment_methods: {
         enabled: true,
       },
@@ -37,11 +41,19 @@ app.post('/api/create-payment-intent', async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating payment intent:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ 
+      error: error.message || 'Internal server error' 
+    });
   }
 });
 
-// Start server
-app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
+});
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
 });
